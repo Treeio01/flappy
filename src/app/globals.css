@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: #ffffff;
+    --foreground: #171717;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --background: #0a0a0a;
+      --foreground: #ededed;
+    }
+  }
+
+  body {
+    color: var(--foreground);
+    background: var(--background);
+  }
+}
+
+
+
+@layer utilities {
+  .font-pixel-primary {
+    font-family: var(--font-pixel-primary), monospace;
+    letter-spacing: 0.05em;
+  }
+
+  .font-pixel-secondary {
+    font-family: var(--font-pixel-secondary), monospace;
+    letter-spacing: 0.05em;
+  }
+
+  .pixel-art {
+    image-rendering: pixelated;
+  }
+}
+
