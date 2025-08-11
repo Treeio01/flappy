@@ -5,12 +5,12 @@ import localFont from "next/font/local"
 import type React from "react"
 
 const pixelFontPrimary = localFont({
-    src: "../fonts/pixelFont.ttf",
+    src: "../fonts/pixelfont.ttf",
     variable: "--font-pixel-primary",
 })
 
 const pixelFontSecondary = localFont({
-    src: "../fonts/secondpixel.ttf",
+    src: "../fonts/secondpixel.TTF",
     variable: "--font-pixel-secondary",
 })
 
