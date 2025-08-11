@@ -1,100 +1,173 @@
-// app/admin/page.tsx
 "use client"
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
+import { api, IMG_URL } from "@/lib/api"
+
+type Network = "EVM" | "SOL" | "BTC"
 
 interface Giveaway {
   id: number
   name: string
-  project_link: string
+  network: Network
   description: string
   image: string
   active: boolean
 }
 
+interface EntryUser { discord_name?: string }
+interface EntryGiveaway { name?: string }
+
 interface GiveawayEntry {
   id: number
   wallet: string
-  discord: string
-  giveaway_name: string
   verified: boolean
+  user: EntryUser
+  giveaway: EntryGiveaway
 }
 
 export default function AdminPanel() {
   const router = useRouter()
   const [entries, setEntries] = useState<GiveawayEntry[]>([])
   const [giveaways, setGiveaways] = useState<Giveaway[]>([])
-  const [newGiveaway, setNewGiveaway] = useState<Omit<Giveaway, 'id'>>({
+
+  // форма добавления/редактирования
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [newGiveaway, setNewGiveaway] = useState<Omit<Giveaway, "id">>({
     name: "",
-    project_link: "",
+    network: "EVM",
     description: "",
     image: "",
     active: true,
   })
+  const [imageFile, setImageFile] = useState<File | null>(null)
+
   const [searchTerm, setSearchTerm] = useState("")
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    const token = localStorage.getItem("token")
-    const isAdmin = localStorage.getItem("is_admin") === "true"
-    if (!token || !isAdmin) {
-      //router.replace("/login")
+    const init = async () => {
+      const isAdmin = await api.auth.isAdmin()
+      if (!isAdmin) {
+        router.replace("/login")
+        return
+      }
+
+      try {
+        const [gives, users] = await Promise.all([
+          api.giveaways.list(),
+          api.entries.list(),
+        ])
+        setGiveaways(gives)
+        setEntries(users)
+      } catch (err) {
+        console.error("Ошибка загрузки данных:", err)
+      } finally {
+        setLoading(false)
+      }
     }
+    init()
+  }, [router])
 
-    setEntries([
-      {
-        id: 1,
-        wallet: "0x123...abc",
-        discord: "flappy#0420",
-        giveaway_name: "Encore x Yardz",
-        verified: false,
-      },
-      {
-        id: 2,
-        wallet: "0x456...def",
-        discord: "yardz#0690",
-        giveaway_name: "Another Project",
-        verified: true,
-      },
-    ])
-
-    setGiveaways([
-      {
-        id: 1,
-        name: "Encore x Yardz",
-        project_link: "https://www.alphabot.app/encore-x-yardz-5d562a",
-        description: "Participate in the exclusive Encore x Yardz giveaway.",
-        image: "/img/project1.png",
-        active: true,
-      },
-    ])
-  }, [])
-
-  const verifyWallet = (id: number) => {
-    setEntries(prev =>
-      prev.map(e => (e.id === id ? { ...e, verified: true } : e))
-    )
+  const verifyWallet = async (id: number) => {
+    try {
+      await api.entries.verify(id)
+      setEntries(prev =>
+        prev.map(e => (e.id === id ? { ...e, verified: true } : e))
+      )
+    } catch (err) {
+      console.error("Ошибка при верификации:", err)
+    }
   }
 
-  const handleAddGiveaway = () => {
-    const id = giveaways.length + 1
-    setGiveaways(prev => [...prev, { id, ...newGiveaway }])
-    setNewGiveaway({ name: "", project_link: "", description: "", image: "", active: true })
+  const handleAddOrUpdateGiveaway = async () => {
+    try {
+      setSaving(true)
+      const formData = new FormData()
+      formData.append("name", newGiveaway.name)
+      formData.append("network", newGiveaway.network)
+      formData.append("description", newGiveaway.description)
+      formData.append("active", String(newGiveaway.active))
+      if (imageFile) formData.append("image", imageFile)
+
+      if (editingId) {
+        // UPDATE
+        const updated = await api.giveaways.update(editingId, formData)
+        setGiveaways(prev => prev.map(g => (g.id === editingId ? updated : g)))
+      } else {
+        // CREATE
+        const created = await api.giveaways.create(formData)
+        setGiveaways(prev => [...prev, created])
+      }
+
+      // reset
+      setNewGiveaway({ name: "", network: "EVM", description: "", image: "", active: true })
+      setImageFile(null)
+      setEditingId(null)
+    } catch (err) {
+      console.error("Ошибка при сохранении гива:", err)
+    } finally {
+      setSaving(false)
+    }
   }
 
-  const handleDeleteGiveaway = (id: number) => {
-    setGiveaways(prev => prev.filter(g => g.id !== id))
+  const handleDeleteGiveaway = async (id: number) => {
+    try {
+      await api.giveaways.delete(id)
+      setGiveaways(prev => prev.filter(g => g.id !== id))
+      if (editingId === id) {
+        setEditingId(null)
+        setNewGiveaway({ name: "", network: "EVM", description: "", image: "", active: true })
+        setImageFile(null)
+      }
+    } catch (err) {
+      console.error("Ошибка при удалении:", err)
+    }
   }
 
   const handleToggleEdit = (id: number) => {
     const g = giveaways.find(g => g.id === id)
-    if (g) setNewGiveaway({ ...g })
+    if (!g) return
+    setEditingId(id)
+    setNewGiveaway({
+      name: g.name,
+      network: g.network,
+      description: g.description,
+      image: g.image,
+      active: g.active,
+    })
+    setImageFile(null)
+  }
+
+  // <<<— ТОГГЛ СТАТУСА (End/Activate)
+  const handleToggleStatus = async (id: number) => {
+    const g = giveaways.find(x => x.id === id)
+    if (!g) return
+    try {
+      const updated = await api.giveaways.end(id)
+      window.location.reload()
+    } catch (e) {
+      console.error("Не удалось изменить статус гива:", e)
+    }
   }
 
   const filteredEntries = entries.filter(entry =>
-    entry.discord.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    entry.wallet.toLowerCase().includes(searchTerm.toLowerCase())
+    (entry.user?.discord_name || "")
+      .toLowerCase()
+      .includes(searchTerm.toLowerCase()) ||
+    (entry.wallet || "")
+      .toLowerCase()
+      .includes(searchTerm.toLowerCase())
   )
+
+  if (loading) {
+    return (
+      <div className="p-6 bg-[#7bc5cd] min-h-screen text-white font-pixel-primary">
+        <h1 className="text-3xl mb-6 text-center">Загрузка...</h1>
+      </div>
+    )
+  }
 
   return (
     <div className="p-6 bg-[#7bc5cd] min-h-screen text-white font-pixel-primary">
@@ -107,17 +180,37 @@ export default function AdminPanel() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           {giveaways.map(g => (
             <div key={`giveaway-${g.id}`} className="bg-[#DBDA96] border-4 border-[#D2AA4F] p-4 text-[#4E3B40]">
-              <h3 className="text-xl mb-2">{g.name}</h3>
+              <img src={IMG_URL + g.image} alt={g.name} className="w-full h-32 object-cover mb-3" />
+              <h3 className="text-xl mb-1">{g.name}</h3>
+              <p className="text-sm mb-1">Network: {g.network}</p>
               <p className="text-sm mb-1">{g.description}</p>
-              <p className="text-sm mb-1 underline">{g.project_link}</p>
-              <p className="text-sm mb-2">Status: {g.active ? "🟢 Active" : "🔴 Ended"}</p>
-              <button className="mr-2 bg-[#4E3B40] text-white px-2 py-1" onClick={() => handleToggleEdit(g.id)}>Edit</button>
-              <button className="bg-red-600 text-white px-2 py-1" onClick={() => handleDeleteGiveaway(g.id)}>Delete</button>
+              <p className="text-sm mb-3">Status: {g.active ? "🟢 Active" : "🔴 Ended"}</p>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  className="bg-[#4E3B40] text-white px-3 py-1"
+                  onClick={() => handleToggleEdit(g.id)}
+                >
+                  Edit
+                </button>
+                <button
+                  className="bg-red-600 text-white px-3 py-1"
+                  onClick={() => handleDeleteGiveaway(g.id)}
+                >
+                  Delete
+                </button>
+                <button
+                  className="bg-[#91616E] text-white px-3 py-1"
+                  onClick={() => handleToggleStatus(g.id)}
+                >
+                  {g.active ? "End Giveaway" : "Activate"}
+                </button>
+              </div>
             </div>
           ))}
         </div>
 
-        <h3 className="text-xl mb-2">➕ Add / Edit Giveaway</h3>
+        <h3 className="text-xl mb-2">{editingId ? "✏️ Edit Giveaway" : "➕ Add Giveaway"}</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <input
             className="p-2 text-[#4E3B40] bg-[#C9C98A]"
@@ -125,28 +218,62 @@ export default function AdminPanel() {
             value={newGiveaway.name}
             onChange={e => setNewGiveaway({ ...newGiveaway, name: e.target.value })}
           />
-          <input
+          <select
             className="p-2 text-[#4E3B40] bg-[#C9C98A]"
-            placeholder="Project Link"
-            value={newGiveaway.project_link}
-            onChange={e => setNewGiveaway({ ...newGiveaway, project_link: e.target.value })}
-          />
-          <input
-            className="p-2 text-[#4E3B40] bg-[#C9C98A]"
-            placeholder="Image URL"
-            value={newGiveaway.image}
-            onChange={e => setNewGiveaway({ ...newGiveaway, image: e.target.value })}
-          />
-          <input
-            className="p-2 text-[#4E3B40] bg-[#C9C98A]"
+            value={newGiveaway.network}
+            onChange={e => setNewGiveaway({ ...newGiveaway, network: e.target.value as Network })}
+          >
+            <option value="EVM">EVM</option>
+            <option value="SOL">SOL</option>
+            <option value="BTC">BTC</option>
+          </select>
+          <textarea
+            className="p-2 text-[#4E3B40] bg-[#C9C98A] md:col-span-2"
             placeholder="Description"
             value={newGiveaway.description}
             onChange={e => setNewGiveaway({ ...newGiveaway, description: e.target.value })}
           />
+          <div className="flex items-center gap-2 md:col-span-2">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={newGiveaway.active}
+                onChange={(e) => setNewGiveaway({ ...newGiveaway, active: e.target.checked })}
+              />
+              <span className="text-[#4E3B40]">Active</span>
+            </label>
+          </div>
+          <input
+            type="file"
+            accept="image/*"
+            className="p-2 text-[#4E3B40] bg-[#C9C98A] md:col-span-2"
+            onChange={e => {
+              const file = e.target.files?.[0]
+              if (file) setImageFile(file)
+            }}
+          />
         </div>
-        <button className="mt-4 bg-[#4E3B40] px-4 py-2" onClick={handleAddGiveaway}>
-          Save Giveaway
-        </button>
+        <div className="mt-4 flex gap-2">
+          <button
+            className="bg-[#4E3B40] px-4 py-2 disabled:opacity-60"
+            onClick={handleAddOrUpdateGiveaway}
+            disabled={saving}
+          >
+            {saving ? "Saving..." : "Save Giveaway"}
+          </button>
+          {editingId && (
+            <button
+              className="bg-[#888] px-4 py-2"
+              onClick={() => {
+                setEditingId(null)
+                setNewGiveaway({ name: "", network: "EVM", description: "", image: "", active: true })
+                setImageFile(null)
+              }}
+            >
+              Cancel Edit
+            </button>
+          )}
+        </div>
       </div>
 
       {/* PARTICIPANTS */}
@@ -173,13 +300,10 @@ export default function AdminPanel() {
             </thead>
             <tbody>
               {filteredEntries.map((entry, i) => (
-                <tr
-                  key={entry.id}
-                  className="bg-[#DBDA96] text-[#4E3B40] text-center"
-                >
+                <tr key={entry.id} className="bg-[#DBDA96] text-[#4E3B40] text-center">
                   <td className="border p-2">{i + 1}</td>
-                  <td className="border p-2">{entry.giveaway_name}</td>
-                  <td className="border p-2">{entry.discord}</td>
+                  <td className="border p-2">{entry.giveaway?.name || "-"}</td>
+                  <td className="border p-2">{entry.user?.discord_name || "-"}</td>
                   <td className="border p-2">{entry.wallet}</td>
                   <td className="border p-2">
                     {entry.verified ? "✅ Verified" : "⏳ Pending"}
