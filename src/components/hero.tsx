@@ -101,56 +101,7 @@ export const Hero = () => {
                         <p>x.com</p>
                     </div>
                 </Link>
-                <div className="flex flex-col items-start mds:gap-3 gap-8 w-full z-[2] bg-[#DBDA96] md:px-[30px] px-[15px] md:pt-[42px] pt-[20px] md:pb-[30px] pb-[25px] border-[3px] border-[#D2AA4F] h-[100%] shadow-pixel">
-                    <h3 className="text-[24px] text-[#D2AA4F]">FILL FORM AND JOIN</h3>
-                    <div className="flex flex-col items-center w-full gap-3">
-                        <div className="flex p-4 bg-[#C9C98A] text-[#4E3B40] w-full">
-              <textarea
-                  placeholder="Enter your experience in web3"
-                  className="w-full h-[295px] bg-transparent outline-0 placeholder:text-[#a49f74]"
-                  value={experience}
-                  onChange={(e) => setExperience(e.target.value)}
-              ></textarea>
-                        </div>
-                        <input
-                            placeholder="Enter your WALLET ADDRESS FOR PNL CHECK"
-                            className="w-full text-[#4E3B40] bg-[#C9C98A] p-4 outline-0 text-center placeholder:text-[#a49f74]"
-                            type="text"
-                            value={wallet}
-                            onChange={(e) => setWallet(e.target.value)}
-                        />
-                        <div className="bg-[#C9C98A] p-4 w-full">
-                            <div className="flex items-center justify-center gap-2">
-                                {twitter.trim() !== "" ? <XLogoActive /> : <XLogoInactive />}
-                                <input
-                                    placeholder="Enter your TWITTER"
-                                    className="w-[200px] text-[#4E3B40] bg-transparent outline-0 placeholder:text-[#a49f74]"
-                                    type="text"
-                                    value={twitter}
-                                    onChange={(e) => setTwitter(e.target.value)}
-                                />
-                            </div>
-                        </div>
-                    </div>
-
-                    <button
-                        onClick={handleSubmit}
-                        disabled={!isFormValid || isSubmitting}
-                        className={`mt-[70px] text-white font-pixel-secondary w-full p-[21px] border-[4px] text-[24px] border-[#735D63] ${
-                            isFormValid && !isSubmitting ? "bg-[#4E3B40] cursor-pointer" : "bg-[#7a6a6e] cursor-not-allowed"
-                        }`}
-                    >
-                        {isSubmitting ? (
-                            <span className="flex items-center justify-center">
-                <Loader2 className="mr-2 h-6 w-6 animate-spin" /> SUBMITTING...
-              </span>
-                        ) : submitStatus.success ? (
-                            "SUCCESS"
-                        ) : (
-                            "APPLY"
-                        )}
-                    </button>
-                </div>
+                
             </div>
         </div>
     )

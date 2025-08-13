@@ -24,7 +24,6 @@ interface Entry {
   verified: boolean | 0 | 1
   winner?: boolean | 0 | 1
   needs_verification?: boolean | 0 | 1
-  // сервер может возвращать вложенные объекты
   user?: { discord_name?: string }
   giveaway?: { name?: string }
 }
@@ -32,25 +31,17 @@ interface Entry {
 export default function GiveawaysPage() {
   const router = useRouter()
 
-  // данные
   const [activeGiveaways, setActiveGiveaways] = useState<Giveaway[]>([])
   const [endedGiveaways, setEndedGiveaways] = useState<Giveaway[]>([])
   const [entries, setEntries] = useState<Entry[]>([])
-
-  // формы/состояния
   const [walletByGiveaway, setWalletByGiveaway] = useState<Record<number, string>>({})
   const [submittingId, setSubmittingId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // верификация (модалка)
-  const [verifyModalOpen, setVerifyModalOpen] = useState(false)
-  const [verifyEntry, setVerifyEntry] = useState<Entry | null>(null)
-
-  // для сравнения старых/новых записей при пуллинге
+  // для сравнения при пуллинге
   const prevEntriesRef = useRef<Entry[] | null>(null)
   const pollingRef = useRef<number | null>(null)
 
-  // проверка авторизации + первая загрузка
   useEffect(() => {
     const init = async () => {
       const token = localStorage.getItem("auth_token")
@@ -62,14 +53,11 @@ export default function GiveawaysPage() {
       try {
         setLoading(true)
         const all = await api.giveaways.list()
-        const act = (all as Giveaway[]).filter(g => g.active)
-        const end = (all as Giveaway[]).filter(g => !g.active)
-        setActiveGiveaways(act)
-        setEndedGiveaways(end)
+        setActiveGiveaways((all as Giveaway[]).filter(g => g.active))
+        setEndedGiveaways((all as Giveaway[]).filter(g => !g.active))
 
         const myEntries = await api.entries.list()
         setEntries(myEntries as Entry[])
-        // зафиксируем «старое» состояние после первой загрузки
         prevEntriesRef.current = myEntries as Entry[]
       } catch (e) {
         console.error("Failed to load:", e)
@@ -80,47 +68,20 @@ export default function GiveawaysPage() {
     init()
 
     return () => {
-      // на всякий — при уходе со страницы остановим интервал
       if (pollingRef.current) window.clearInterval(pollingRef.current)
     }
   }, [router])
 
-  // пуллинг: каждые 5 сек тянем свежие entries и ищем переход verified: 0 -> 1
+  // пуллинг (оставил, чтобы статус verified обновлялся сам)
   useEffect(() => {
     if (!entries.length) return
-
-    // уже может быть активен
     if (pollingRef.current) window.clearInterval(pollingRef.current)
 
     pollingRef.current = window.setInterval(async () => {
       try {
         const fresh = (await api.entries.list()) as Entry[]
-
-        const prev = prevEntriesRef.current || []
-        const prevMap = new Map<number, Entry>()
-        prev.forEach(e => prevMap.set(e.id, e))
-
-        // ищем те, у кого verified поменялся с false/0 на true/1
-        let promoted: Entry | null = null
-        for (const now of fresh) {
-          const before = prevMap.get(now.id)
-          const wasVerified = !!(before && (before.verified === true || before.verified === 1))
-          const nowVerified = !!(now.verified === true || now.verified === 1)
-
-          if (!wasVerified && nowVerified) {
-            promoted = now
-            break
-          }
-        }
-
-        // обновляем локально
         setEntries(fresh)
         prevEntriesRef.current = fresh
-
-        if (promoted && !verifyModalOpen) {
-          setVerifyEntry(promoted)
-          setVerifyModalOpen(true)
-        }
       } catch (e) {
         console.error("Polling error:", e)
       }
@@ -130,16 +91,13 @@ export default function GiveawaysPage() {
       if (pollingRef.current) window.clearInterval(pollingRef.current)
       pollingRef.current = null
     }
-  }, [entries, verifyModalOpen])
+  }, [entries])
 
-  // мапа: giveaway_id -> entry
   const entryByGiveaway = useMemo(() => {
     const map = new Map<number, Entry>()
     for (const e of entries) map.set(e.giveaway_id, e)
     return map
   }, [entries])
-
-  const isRegistered = (giveawayId: number) => entryByGiveaway.has(giveawayId)
 
   const needsVerification = (giveawayId: number) => {
     const e = entryByGiveaway.get(giveawayId)
@@ -147,6 +105,8 @@ export default function GiveawaysPage() {
     const winner = !!(e.winner === true || e.winner === 1)
     const needs = !!(e.needs_verification === true || e.needs_verification === 1)
     const verified = !!(e.verified === true || e.verified === 1)
+    // по твоей просьбе кнопку показываем всегда при регистрации,
+    // но это значение используем, чтобы подсветить статус
     return (winner || needs) && !verified
   }
 
@@ -176,13 +136,7 @@ export default function GiveawaysPage() {
       fd.append("wallet", wallet)
 
       const created = await api.entries.create(fd)
-
-      setEntries(prev => {
-        if (created && created.id) return [...prev, created as Entry]
-        return [...prev, { id: Date.now(), user_id: 0, giveaway_id: giveawayId, wallet, verified: false } as Entry]
-      })
-
-      // сбросим input для этого гива
+      setEntries(prev => (created && created.id ? [...prev, created as Entry] : [...prev]))
       setWalletByGiveaway(prev => ({ ...prev, [giveawayId]: "" }))
     } catch (e) {
       console.error("Ошибка регистрации:", e)
@@ -192,20 +146,10 @@ export default function GiveawaysPage() {
     }
   }
 
-  const openVerifyModal = (giveawayId: number) => {
-    const e = entryByGiveaway.get(giveawayId)
-    if (!e) return
-    setVerifyEntry(e)
-    setVerifyModalOpen(true)
-  }
-
-  const handleVerify = async () => {
-    if (!verifyEntry) return
+  const handleVerify = async (entryId: number) => {
     try {
-      await api.entries.verify(verifyEntry.id)
-      setEntries(prev => prev.map(e => (e.id === verifyEntry.id ? { ...e, verified: true } : e)))
-      setVerifyModalOpen(false)
-      setVerifyEntry(null)
+      await api.entries.verify(entryId)
+      setEntries(prev => prev.map(e => (e.id === entryId ? { ...e, verified: true } : e)))
       alert("Кошелёк верифицирован. 🎉")
     } catch (e) {
       console.error("Ошибка верификации:", e)
@@ -229,8 +173,8 @@ export default function GiveawaysPage() {
         {activeGiveaways.map((g) => {
           const entry = entryByGiveaway.get(g.id)
           const registered = !!entry
-          const canVerify = needsVerification(g.id)
           const submitting = submittingId === g.id
+          const networkLabel = g.network ?? "EVM"
 
           return (
             <div key={g.id} className="bg-[#DBDA96] border-4 border-[#D2AA4F] shadow-pixel p-4">
@@ -248,7 +192,7 @@ export default function GiveawaysPage() {
                 <>
                   <input
                     type="text"
-                    placeholder="Enter your wallet"
+                    placeholder={`Enter your ${networkLabel} wallet`}
                     value={walletByGiveaway[g.id] || ""}
                     onChange={(e) => handleWalletChange(g.id, e.target.value)}
                     className="w-full p-2 text-[#4E3B40] bg-[#C9C98A] outline-none mb-2"
@@ -264,16 +208,21 @@ export default function GiveawaysPage() {
               ) : (
                 <div className="flex flex-col gap-2">
                   <p className="text-green-700 text-sm">
-                    Registered ✅ {entry?.verified ? "(verified)" : "(pending)"}
+                    Registered ✅ {entry?.verified ? "(verified)" : needsVerification(g.id) ? "(needs verification)" : "(pending)"}
                   </p>
-                  {canVerify && (
+
+                  {/* Постоянный блок Verify внутри карточки */}
+                  <div className="bg-[#F0EFAE] border-2 border-[#D2AA4F] p-3 text-[#4E3B40]">
+                    <p className="text-sm mb-2">Your wallet:</p>
+                    <p className="bg-[#C9C98A] p-2 mb-3 break-all">{entry?.wallet}</p>
                     <button
-                      className="bg-[#4E3B40] text-white w-full py-2"
-                      onClick={() => openVerifyModal(g.id)}
+                      className="bg-[#4E3B40] text-white w-full py-2 disabled:opacity-60"
+                      onClick={() => handleVerify(entry!.id)}
+                      disabled={!!(entry?.verified === true || entry?.verified === 1)}
                     >
-                      Verify Wallet
+                      {entry?.verified ? "Verified ✅" : "Verify Wallet"}
                     </button>
-                  )}
+                  </div>
                 </div>
               )}
             </div>
@@ -291,31 +240,6 @@ export default function GiveawaysPage() {
           </div>
         ))}
       </div>
-
-      {/* Verify Modal */}
-      {verifyModalOpen && verifyEntry && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-          <div className="bg-[#DBDA96] p-6 border-4 border-[#D2AA4F] shadow-pixel text-[#4E3B40] max-w-[420px] w-full">
-            <h3 className="text-xl mb-2">🎉 You Won!</h3>
-            <p className="mb-4">Please verify your wallet address:</p>
-            <p className="bg-[#C9C98A] p-2 mb-4 break-all">{verifyEntry.wallet}</p>
-            <div className="flex gap-3">
-              <button className="bg-[#4E3B40] text-white w-full py-2" onClick={handleVerify}>
-                Verify Wallet
-              </button>
-              <button
-                className="bg-[#91616E] text-white w-full py-2"
-                onClick={() => {
-                  setVerifyModalOpen(false)
-                  setVerifyEntry(null)
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

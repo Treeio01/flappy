@@ -14,9 +14,9 @@ export const JoinBtn = () => {
   return (
     <Link href={isAuth ? "/dashboard" : "/login"}>
       <button
-        className="sml:px-7 px-4 shadow-join cursor-pointer sml:py-3 py-1 bg-[#E06119] border-[4px] font-pixel-secondary border-white text-white"
+        className="sml:px-8 px-5 shadow-join cursor-pointer sml:py-4 py-2 bg-[#E06119] border-[4px] font-pixel-secondary border-white text-white"
       >
-        {isAuth ? "DASHBOARD" : "JOIN"}
+        {isAuth ? "Login to Flappy giveaways dashboard" : "JOIN"}
       </button>
     </Link>
   )
