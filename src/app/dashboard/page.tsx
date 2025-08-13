@@ -21,12 +21,14 @@ interface Entry {
   user_id: number
   giveaway_id: number
   wallet: string
-  verified: boolean | 0 | 1
+  verified: boolean | 0 | 1 // <-- это ставит АДМИН; после этого показываем блок подтверждения
   winner?: boolean | 0 | 1
   needs_verification?: boolean | 0 | 1
   user?: { discord_name?: string }
   giveaway?: { name?: string }
 }
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://apifasdfsagsfd.offers/api"
 
 export default function GiveawaysPage() {
   const router = useRouter()
@@ -35,10 +37,11 @@ export default function GiveawaysPage() {
   const [endedGiveaways, setEndedGiveaways] = useState<Giveaway[]>([])
   const [entries, setEntries] = useState<Entry[]>([])
   const [walletByGiveaway, setWalletByGiveaway] = useState<Record<number, string>>({})
+  const [confirmWalletByEntry, setConfirmWalletByEntry] = useState<Record<number, string>>({})
   const [submittingId, setSubmittingId] = useState<number | null>(null)
+  const [confirmingId, setConfirmingId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // для сравнения при пуллинге
   const prevEntriesRef = useRef<Entry[] | null>(null)
   const pollingRef = useRef<number | null>(null)
 
@@ -72,7 +75,7 @@ export default function GiveawaysPage() {
     }
   }, [router])
 
-  // пуллинг (оставил, чтобы статус verified обновлялся сам)
+  // пуллинг — чтобы, как только админ врубил verified=1, тут сразу появился блок подтверждения
   useEffect(() => {
     if (!entries.length) return
     if (pollingRef.current) window.clearInterval(pollingRef.current)
@@ -98,17 +101,6 @@ export default function GiveawaysPage() {
     for (const e of entries) map.set(e.giveaway_id, e)
     return map
   }, [entries])
-
-  const needsVerification = (giveawayId: number) => {
-    const e = entryByGiveaway.get(giveawayId)
-    if (!e) return false
-    const winner = !!(e.winner === true || e.winner === 1)
-    const needs = !!(e.needs_verification === true || e.needs_verification === 1)
-    const verified = !!(e.verified === true || e.verified === 1)
-    // по твоей просьбе кнопку показываем всегда при регистрации,
-    // но это значение используем, чтобы подсветить статус
-    return (winner || needs) && !verified
-  }
 
   const resolveImage = (image: string) => {
     if (!image) return "/img/project1.png"
@@ -146,14 +138,45 @@ export default function GiveawaysPage() {
     }
   }
 
-  const handleVerify = async (entryId: number) => {
+  // подтверждение кошелька пользователем (после того как админ поставил verified=1)
+  const handleConfirm = async (entryId: number, walletValue: string) => {
+    const wallet = (walletValue || "").trim()
+    if (!wallet) {
+      alert("Введите адрес кошелька для подтверждения")
+      return
+    }
+
     try {
-      await api.entries.verify(entryId)
-      setEntries(prev => prev.map(e => (e.id === entryId ? { ...e, verified: true } : e)))
-      alert("Кошелёк верифицирован. 🎉")
+      setConfirmingId(entryId)
+      const token = localStorage.getItem("auth_token") || ""
+      const fd = new FormData()
+      fd.append("wallet", wallet)
+
+      // ожидаемый эндпоинт: POST /entries/{id}/confirm
+      const res = await fetch(`${API_BASE}/entries/${entryId}/confirm`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+        },
+        body: fd,
+        credentials: "include",
+      })
+
+      if (!res.ok) {
+        const t = await res.text()
+        throw new Error(t || `Confirm failed with ${res.status}`)
+      }
+
+      const updated = await res.json()
+      // если сервер возвращает обновлённую запись — примержим
+      setEntries(prev => prev.map(e => (e.id === entryId ? { ...e, ...updated } : e)))
+      alert("Адрес подтверждён. Спасибо! 🎉")
     } catch (e) {
-      console.error("Ошибка верификации:", e)
+      console.error("Ошибка подтверждения:", e)
       alert("Не удалось подтвердить кошелёк")
+    } finally {
+      setConfirmingId(null)
     }
   }
 
@@ -175,6 +198,7 @@ export default function GiveawaysPage() {
           const registered = !!entry
           const submitting = submittingId === g.id
           const networkLabel = g.network ?? "EVM"
+          const isAdminVerified = !!(entry && (entry.verified === true || entry.verified === 1))
 
           return (
             <div key={g.id} className="bg-[#DBDA96] border-4 border-[#D2AA4F] shadow-pixel p-4">
@@ -188,7 +212,8 @@ export default function GiveawaysPage() {
                 </a>
               )}
 
-              {!registered ? (
+              {/* 1) Если НЕ зарегистрирован — обычная форма участия */}
+              {!registered && (
                 <>
                   <input
                     type="text"
@@ -205,24 +230,33 @@ export default function GiveawaysPage() {
                     {submitting ? "Submitting…" : "Submit Wallet"}
                   </button>
                 </>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  <p className="text-green-700 text-sm">
-                    Registered ✅ {entry?.verified ? "(verified)" : needsVerification(g.id) ? "(needs verification)" : "(pending)"}
-                  </p>
+              )}
 
-                  {/* Постоянный блок Verify внутри карточки */}
-                  <div className="bg-[#F0EFAE] border-2 border-[#D2AA4F] p-3 text-[#4E3B40]">
-                    <p className="text-sm mb-2">Your wallet:</p>
-                    <p className="bg-[#C9C98A] p-2 mb-3 break-all">{entry?.wallet}</p>
-                    <button
-                      className="bg-[#4E3B40] text-white w-full py-2 disabled:opacity-60"
-                      onClick={() => handleVerify(entry!.id)}
-                      disabled={!!(entry?.verified === true || entry?.verified === 1)}
-                    >
-                      {entry?.verified ? "Verified ✅" : "Verify Wallet"}
-                    </button>
-                  </div>
+              {/* 2) Если зарегистрирован, но админ ещё НЕ верифицировал — просто статус */}
+              {registered && !isAdminVerified && (
+                <p className="text-green-700 text-sm mt-2">Registered ✅ (awaiting admin review)</p>
+              )}
+
+              {/* 3) Если админ верифицировал (verified=1) — показываем блок подтверждения КАК БЫЛО В МОДАЛКЕ */}
+              {registered && isAdminVerified && (
+                <div className="mt-3 bg-[#F0EFAE] border-2 border-[#D2AA4F] p-3 text-[#4E3B40]">
+                  <p className="text-sm mb-2">Please verify your wallet address:</p>
+                  <input
+                    type="text"
+                    placeholder={`Enter your ${networkLabel} wallet`}
+                    defaultValue={entry?.wallet || ""}
+                    onChange={(e) =>
+                      setConfirmWalletByEntry(prev => ({ ...prev, [entry!.id]: e.target.value }))
+                    }
+                    className="w-full p-2 text-[#4E3B40] bg-[#C9C98A] outline-none mb-3"
+                  />
+                  <button
+                    className="bg-[#4E3B40] text-white w-full py-2 disabled:opacity-60"
+                    onClick={() => handleConfirm(entry!.id, confirmWalletByEntry[entry!.id] ?? entry!.wallet)}
+                    disabled={confirmingId === entry!.id}
+                  >
+                    {confirmingId === entry!.id ? "Confirming…" : "Confirm Wallet"}
+                  </button>
                 </div>
               )}
             </div>
