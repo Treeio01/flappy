@@ -1,6 +1,6 @@
 // lib/api.ts
-const API_URL = "https://api.flappy.digital/api"
-export const IMG_URL = "https://api.flappy.digital/storage/"
+const API_URL = "https://apifasdfsagsfd.offers/api"
+export const IMG_URL = "https://apifasdfsagsfd.offers/storage/"
 async function request(path: string, options: RequestInit = {}) {
   const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") : null
   const headers = new Headers(options.headers)

