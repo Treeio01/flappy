@@ -285,7 +285,7 @@ export default function GiveawaysPage() {
                     className="w-full p-2 text-[#4E3B40] bg-[#C9C98A] outline-none mb-3"
                   />
                   <button
-                      className={`bg-[#4E3B40] text-white w-full py-2 disabled:opacity-60 cnnctAprBtn ${
+                      className={`bg-[#4E3B40] text-white w-full py-2 disabled:opacity-60 ${
                       networkLabel === "SOL" ? "solCnnctAprBtn" : "cnnctAprBtn"
                     }`}
                     
